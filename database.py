@@ -1,6 +1,5 @@
 import sqlite3
 import secrets
-import datetime
 import os
 
 def init_db():
