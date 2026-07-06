@@ -5,12 +5,13 @@ import datetime
 import os
 
 def init_db():
-    """Создаёт таблицы и гарантирует наличие пользователей-админов."""
     if os.path.exists('users.db'):
         os.remove('users.db')
         print("Старая БД удалена, создаётся новая.")
     
     conn = sqlite3.connect('users.db')
+    # Включаем поддержку BLOB
+    conn.execute('PRAGMA encoding="UTF-8"')
     c = conn.cursor()
     
     c.execute('''
@@ -34,7 +35,6 @@ def init_db():
         )
     ''')
     
-    # Список админов и их паролей
     admins = [
         ("dr.drozdov2016@yandex.ru", "Qq12131415", "Дроздов Денис Олегович"),
         ("test@test.ru", "Qq12131415", "Тест Тестович")
@@ -56,6 +56,16 @@ def init_db():
     conn.close()
     print("База данных инициализирована, админы созданы.")
 
+def get_user(email):
+    conn = sqlite3.connect('users.db')
+    # КЛЮЧЕВОЕ: заставляем SQLite возвращать BLOB как bytes
+    conn.text_factory = bytes
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE email = ?", (email,))
+    row = c.fetchone()
+    conn.close()
+    return row
+
 def add_user(email, password, full_name):
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
     confirm_token = secrets.token_urlsafe(32)
@@ -72,14 +82,6 @@ def add_user(email, password, full_name):
         return None
     finally:
         conn.close()
-
-def get_user(email):
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE email = ?", (email,))
-    row = c.fetchone()
-    conn.close()
-    return row
 
 def confirm_user(token):
     conn = sqlite3.connect('users.db')
