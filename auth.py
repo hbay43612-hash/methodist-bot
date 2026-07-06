@@ -1,5 +1,10 @@
 import streamlit as st
 from database import get_user, add_user, confirm_user, is_admin
+import hashlib
+from send_email import send_confirmation_email
+
+def hash_password(password):
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
 def login_page():
     st.title("🔐 Вход в систему")
@@ -8,8 +13,7 @@ def login_page():
     if st.button("Войти", type="primary", key="login_submit_btn"):
         user = get_user(email)
         if user:
-            # Сравниваем пароль как строку
-            if user[1] == password:
+            if hash_password(password) == user[1]:
                 st.session_state['authenticated'] = True
                 st.session_state['user'] = email
                 st.session_state['role'] = 'admin' if is_admin(email) else 'user'
