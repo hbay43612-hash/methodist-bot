@@ -1,7 +1,5 @@
 import streamlit as st
-import bcrypt
 from database import get_user, add_user, confirm_user, is_admin
-from send_email import send_confirmation_email
 
 def login_page():
     st.title("🔐 Вход в систему")
@@ -10,15 +8,8 @@ def login_page():
     if st.button("Войти", type="primary", key="login_submit_btn"):
         user = get_user(email)
         if user:
-            password_hash = user[1]
-            # Если вдруг это строка, преобразуем в байты
-            if isinstance(password_hash, str):
-                password_hash = password_hash.encode('utf-8')
-            # Проверка, что это валидный bcrypt-хеш (начинается с $2)
-            if not password_hash.startswith(b'$2'):
-                st.error("❌ Ошибка: некорректный хеш пароля. Обратитесь к администратору.")
-                return
-            if bcrypt.checkpw(password.encode('utf-8'), password_hash):
+            # Сравниваем пароль как строку
+            if user[1] == password:
                 st.session_state['authenticated'] = True
                 st.session_state['user'] = email
                 st.session_state['role'] = 'admin' if is_admin(email) else 'user'
