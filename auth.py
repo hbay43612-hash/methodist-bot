@@ -9,7 +9,7 @@ def login_page():
     if st.button("Войти", type="primary", key="login_submit_btn"):
         user = get_user(email)
         if user:
-            if password == user[1]:  # Сравниваем открытые пароли
+            if password == user[1]:
                 st.session_state['authenticated'] = True
                 st.session_state['user'] = email
                 st.session_state['role'] = 'admin' if is_admin(email) else 'user'
