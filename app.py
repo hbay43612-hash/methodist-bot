@@ -22,6 +22,7 @@ if not client:
 
 def main_app():
     st.title("📚 Робот-методист")
+
     st.header("📝 Генерация конспекта урока")
 
     grade = st.selectbox(
@@ -37,25 +38,24 @@ def main_app():
 
     themes = get_lesson_themes(grade)
     if not themes:
-        st.warning("⚠️ Нет тем для выбранного класса. Проверьте файлы lessons_*.json в корне репозитория.")
+        st.warning("⚠️ Нет тем для выбранного класса. Проверьте файлы lessons_*.json")
         themes = ["Нет тем"]
+
     theme = st.selectbox("Тема урока", themes, key="theme_selector")
 
     lesson_types = get_lesson_types()
     if not lesson_types:
-        st.warning("⚠️ Файл types.json не найден.")
         lesson_types = ["Нет типов"]
     lesson_type = st.selectbox("Тип урока", lesson_types, key="lesson_type_selector")
 
-    # Учебник
     textbook_files = []
     if os.path.exists("textbooks"):
         textbook_files = [f for f in os.listdir("textbooks") if f.endswith(".docx")]
+
     if textbook_files:
         textbook_choice = st.selectbox("Учебник", textbook_files, key="textbook_selector")
-        st.caption(f"📖 Выбран: {textbook_choice}")
     else:
-        st.warning("📁 Нет загруженных учебников. Положите файлы .docx в папку textbooks.")
+        st.warning("📁 Нет учебников. Положите .docx в папку textbooks.")
         textbook_choice = None
 
     agents = get_available_agents()
@@ -88,7 +88,6 @@ def main_app():
                         textbook_text=textbook_text
                     )
                     st.success("✅ Конспект готов!")
-                    st.markdown("### 📄 Результат:")
                     st.text_area("Конспект", result, height=500, key="result_area")
                     st.download_button(
                         label="📥 Скачать конспект (DOCX)",
@@ -98,7 +97,7 @@ def main_app():
                         key="download_btn"
                     )
                 except Exception as e:
-                    st.error(f"❌ Ошибка генерации: {e}")
+                    st.error(f"❌ Ошибка: {e}")
 
 def main():
     main_app()
