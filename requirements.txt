@@ -2,6 +2,6 @@ streamlit
 bcrypt
 requests
 python-dotenv
-docx
-openai
+python-docx
+openai>=1.0.0
 Pillow
