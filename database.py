@@ -1,7 +1,5 @@
 import sqlite3
-import bcrypt
 import secrets
-import datetime
 import os
 
 def init_db():
@@ -10,15 +8,13 @@ def init_db():
         print("Старая БД удалена, создаётся новая.")
     
     conn = sqlite3.connect('users.db')
-    # Включаем поддержку BLOB
-    conn.execute('PRAGMA encoding="UTF-8"')
     c = conn.cursor()
     
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE,
-            password BLOB,
+            password TEXT,  -- Храним пароль в открытом виде
             full_name TEXT,
             role TEXT DEFAULT 'user',
             tariff TEXT DEFAULT 'free',
@@ -41,25 +37,22 @@ def init_db():
     ]
     
     for email, password, full_name in admins:
-        hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
         c.execute("SELECT id FROM users WHERE email = ?", (email,))
         if c.fetchone():
-            c.execute("UPDATE users SET password = ?, confirmed = 1, tariff = 'pro' WHERE email = ?", (hashed, email))
+            c.execute("UPDATE users SET password = ?, confirmed = 1, tariff = 'pro' WHERE email = ?", (password, email))
         else:
             c.execute(
                 "INSERT INTO users (email, password, full_name, confirmed, tariff) VALUES (?, ?, ?, 1, 'pro')",
-                (email, hashed, full_name)
+                (email, password, full_name)
             )
         c.execute("INSERT OR IGNORE INTO admins (email) VALUES (?)", (email,))
     
     conn.commit()
     conn.close()
-    print("База данных инициализирована, админы созданы.")
+    print("База данных инициализирована, админы созданы (пароли в открытом виде).")
 
 def get_user(email):
     conn = sqlite3.connect('users.db')
-    # КЛЮЧЕВОЕ: заставляем SQLite возвращать BLOB как bytes
-    conn.text_factory = bytes
     c = conn.cursor()
     c.execute("SELECT * FROM users WHERE email = ?", (email,))
     row = c.fetchone()
@@ -67,14 +60,13 @@ def get_user(email):
     return row
 
 def add_user(email, password, full_name):
-    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
     confirm_token = secrets.token_urlsafe(32)
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     try:
         c.execute(
             "INSERT INTO users (email, password, full_name, confirm_token, confirmed) VALUES (?, ?, ?, ?, 1)",
-            (email, hashed, full_name, confirm_token)
+            (email, password, full_name, confirm_token)
         )
         conn.commit()
         return confirm_token
