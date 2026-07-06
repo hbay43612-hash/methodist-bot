@@ -4,7 +4,6 @@ import re
 import random
 import logging
 from io import BytesIO
-import datetime
 
 import openai
 import docx
@@ -16,11 +15,8 @@ import streamlit as st
 load_dotenv()
 
 # ============================================================
-# 1. ЗАГРУЗКА JSON (как в main.py)
+# 1. ЗАГРУЗКА JSON
 # ============================================================
-def resource_path(filename):
-    return filename
-
 def load_json(filename):
     if os.path.exists(filename):
         with open(filename, "r", encoding="utf-8") as f:
@@ -31,7 +27,7 @@ def load_json(filename):
     return {}
 
 # ============================================================
-# 2. КОНФИГУРАЦИЯ YANDEX GPT (как в main.py)
+# 2. КОНФИГУРАЦИЯ YANDEX GPT
 # ============================================================
 def get_openai_client():
     try:
@@ -60,7 +56,42 @@ def get_openai_client():
 client = get_openai_client()
 
 # ============================================================
-# 3. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ИЗ main.py
+# 3. ПАРСИНГ КЛАССА И КЛЮЧИ ФАЙЛОВ (из main.py)
+# ============================================================
+def parse_grade_choice(choice):
+    subject = "soc" if "обществозн" in choice.lower() else "hist"
+    m = re.search(r'(\d+)', choice)
+    num = m.group(1) if m else ""
+    level = ""
+    if "база" in choice.lower():
+        level = "base"
+    elif "профиль" in choice.lower():
+        level = "prof"
+    return subject, num, level
+
+def grade_file_key(choice):
+    subject, num, level = parse_grade_choice(choice)
+    key = num if subject == "hist" else f"soc_{num}"
+    if level:
+        key = f"{key}_{level}"
+    return key
+
+def textbook_keys(choice):
+    subject, num, level = parse_grade_choice(choice)
+    base = num if subject == "hist" else f"soc_{num}"
+    if level:
+        return [f"{base}_{level}", base]
+    return [base]
+
+# ============================================================
+# 4. ЗАГРУЗКА ДАННЫХ
+# ============================================================
+TYPES_DATA = load_json("types.json")
+PROMPTS_DATA = load_json("prompts.json")
+SOCIAL_PROMPTS_DATA = load_json("prompts_social.json")
+
+# ============================================================
+# 5. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (из main.py)
 # ============================================================
 def _strip_cite_marks(obj):
     if isinstance(obj, str):
@@ -99,45 +130,13 @@ def ask_json(agent_id, instruction, expected_keys):
     raw = client.responses.create(prompt={"id": agent_id}, input=full_prompt).output_text
     data = _extract_json(raw)
     if data is None:
-        logging.warning("Модель вернула не-JSON, использую сырой текст.")
+        logging.warning("Модель вернула не-JSON, использую сырой текст. Ответ: %s", raw[:500])
         data = {expected_keys[0]: raw.strip()}
     return {k: str(data.get(k, "") or "").strip() for k in expected_keys}
 
 # ============================================================
-# 4. ПАРСИНГ КЛАССА (из main.py)
+# 6. ВАРИАТИВНОСТЬ ПРИЁМОВ
 # ============================================================
-def parse_grade_choice(choice):
-    subject = "soc" if "обществозн" in choice.lower() else "hist"
-    m = re.search(r'(\d+)', choice)
-    num = m.group(1) if m else ""
-    level = ""
-    if "база" in choice.lower():
-        level = "base"
-    elif "профиль" in choice.lower():
-        level = "prof"
-    return subject, num, level
-
-def grade_file_key(choice):
-    subject, num, level = parse_grade_choice(choice)
-    key = num if subject == "hist" else f"soc_{num}"
-    if level:
-        key = f"{key}_{level}"
-    return key
-
-def textbook_keys(choice):
-    subject, num, level = parse_grade_choice(choice)
-    base = num if subject == "hist" else f"soc_{num}"
-    if level:
-        return [f"{base}_{level}", base]
-    return [base]
-
-# ============================================================
-# 5. ВАРИАТИВНОСТЬ ПРИЁМОВ (из main.py)
-# ============================================================
-TYPES_DATA = load_json("types.json")
-PROMPTS_DATA = load_json("prompts.json")
-SOCIAL_PROMPTS_DATA = load_json("prompts_social.json")
-
 _SERVICE_PROMPTS = {"Функциональная грамотность (PISA)", "Формирующее оценивание (Промпт №2)"}
 
 def _technique_short(value):
@@ -177,7 +176,7 @@ def is_variative_stage(stage_name):
     return any(kw in low for kw in _VARIATIVE_KEYWORDS)
 
 # ============================================================
-# 6. ГЕНЕРАЦИЯ КОНСПЕКТА (ПОЛНОСТЬЮ ИЗ main.py)
+# 7. ГЕНЕРАЦИЯ КОНСПЕКТА (ПОЛНОСТЬЮ ИЗ main.py)
 # ============================================================
 def generate_lesson(theme, lesson_type, agent_id, grade, textbook_text=""):
     if not client:
@@ -308,7 +307,7 @@ def generate_lesson(theme, lesson_type, agent_id, grade, textbook_text=""):
     return result
 
 # ============================================================
-# 7. ФУНКЦИИ ДЛЯ ИНТЕРФЕЙСА (темы, типы уроков, учебники)
+# 8. ФУНКЦИИ ДЛЯ ИНТЕРФЕЙСА (ТЕМЫ, ТИПЫ УРОКОВ, УЧЕБНИКИ)
 # ============================================================
 def get_lesson_themes(grade):
     key = grade_file_key(grade)
@@ -329,7 +328,7 @@ def get_textbook_content(filepath):
         return ""
 
 # ============================================================
-# 8. МОДЕЛИ И ТАРИФЫ
+# 9. МОДЕЛИ И ТАРИФЫ
 # ============================================================
 AGENTS = {
     "⚡ Быстрый (YandexGPT 5 Lite)": "fvtp590q2aec9sirbfd4",
