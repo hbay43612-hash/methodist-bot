@@ -15,16 +15,10 @@ from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from dotenv import load_dotenv
 
-from tariffs import TARIFFS, AGENTS
-
+# --- КОНФИГУРАЦИЯ YANDEX GPT ---
 load_dotenv()
 
-# --- КОНФИГУРАЦИЯ YANDEX GPT ---
-YANDEX_CLOUD_API_KEY = os.getenv("YANDEX_CLOUD_API_KEY")
-YANDEX_CLOUD_FOLDER = os.getenv("YANDEX_CLOUD_FOLDER")
-
 def get_openai_client():
-    # Сначала пробуем получить из st.secrets (для Streamlit Cloud)
     try:
         import streamlit as st
         api_key = st.secrets.get("YANDEX_CLOUD_API_KEY")
@@ -38,60 +32,17 @@ def get_openai_client():
             )
     except:
         pass
-    # Если нет — пробуем из .env (для локальной разработки)
-    if YANDEX_CLOUD_API_KEY and YANDEX_CLOUD_FOLDER:
+    # Для локальной разработки
+    api_key = os.getenv("YANDEX_CLOUD_API_KEY")
+    folder = os.getenv("YANDEX_CLOUD_FOLDER")
+    if api_key and folder:
         return openai.OpenAI(
-            api_key=YANDEX_CLOUD_API_KEY,
+            api_key=api_key,
             base_url="https://ai.api.cloud.yandex.net/v1",
-            project=YANDEX_CLOUD_FOLDER,
+            project=folder,
             timeout=60.0,
         )
     return None
-
-client = get_openai_client()
-
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
-def _strip_cite_marks(obj):
-    if isinstance(obj, str):
-        return re.sub(r'\s*\[cite[^\]]*\]', '', obj)
-    if isinstance(obj, dict):
-        return {k: _strip_cite_marks(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_strip_cite_marks(v) for v in obj]
-    return obj
-
-def _extract_json(text):
-    if not text:
-        return None
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        return None
-    chunk = text[start:end+1]
-    try:
-        return json.loads(chunk)
-    except:
-        return None
-
-def ask_json(agent_id, instruction, expected_keys):
-    """Отправляет запрос в Yandex GPT и возвращает JSON-ответ."""
-    if not client:
-        raise Exception("Yandex GPT не настроен")
-    keys_desc = ", ".join(f'"{k}"' for k in expected_keys)
-    full_prompt = (
-        instruction
-        + "\n\nВЕРНИ ОТВЕТ СТРОГО В ФОРМАТЕ JSON, без пояснений, без markdown, "
-        + "без обратных кавычек. Только один JSON-объект со следующими ключами: "
-        + keys_desc + ". "
-        + "Значение каждого ключа — готовый текст на русском языке для этого поля "
-        + "технологической карты. Не добавляй других ключей."
-    )
-    raw = client.responses.create(prompt={"id": agent_id}, input=full_prompt).output_text
-    data = _extract_json(raw)
-    if data is None:
-        logging.warning("Модель вернула не-JSON, использую сырой текст. Ответ: %s", raw[:500])
-        data = {expected_keys[0]: raw.strip()}
-    return {k: str(data.get(k, "") or "").strip() for k in expected_keys}
 
 # --- ГЕНЕРАЦИЯ КОНСПЕКТА (пока заглушка) ---
 def generate_lesson(theme, lesson_type, agent_id, grade, textbook_text=""):
@@ -113,43 +64,6 @@ def generate_lesson(theme, lesson_type, agent_id, grade, textbook_text=""):
 ... (здесь будет полный конспект)
 """
 
-# --- ФУНКЦИИ ДЛЯ РАБОТЫ С БАЗОЙ ДАННЫХ ---
-def check_generation_limit(email):
-    """Проверяет, не превышен ли дневной лимит."""
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-    today = datetime.date.today().isoformat()
-    c.execute("SELECT tariff, daily_generations, last_gen_date FROM users WHERE email=?", (email,))
-    row = c.fetchone()
-    if not row:
-        conn.close()
-        return False
-    tariff, gen_count, last_date = row
-    if last_date != today:
-        gen_count = 0
-        c.execute("UPDATE users SET daily_generations = 0, last_gen_date = ? WHERE email=?", (today, email))
-        conn.commit()
-    limit = TARIFFS[tariff]["generations_per_day"]
-    if gen_count >= limit:
-        conn.close()
-        return False
-    c.execute("UPDATE users SET daily_generations = ? WHERE email=?", (gen_count+1, email))
-    conn.commit()
-    conn.close()
-    return True
-
-def get_available_agents(email):
-    """Возвращает список доступных моделей для пользователя."""
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-    c.execute("SELECT tariff FROM users WHERE email=?", (email,))
-    row = c.fetchone()
-    conn.close()
-    if row:
-        tariff = row[0]
-        return TARIFFS[tariff]["available_agents"]
-    return []
-
 # --- ФУНКЦИИ ДЛЯ РАБОТЫ С УЧЕБНИКАМИ И КТП ---
 def get_lesson_themes(grade):
     """Возвращает список тем для выбранного класса (из lessons_*.json)."""
@@ -158,18 +72,25 @@ def get_lesson_themes(grade):
     if level:
         key = f"{key}_{level}"
     filename = f"lessons_{key}.json"
+    # Пытаемся найти файл в корневой папке
     if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return list(data.keys())
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return list(data.keys())
+        except:
+            return []
     return []
 
 def get_lesson_types():
     """Возвращает список типов уроков из types.json."""
     if os.path.exists("types.json"):
-        with open("types.json", "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return list(data.keys())
+        try:
+            with open("types.json", "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return list(data.keys())
+        except:
+            return []
     return []
 
 def get_textbook_content(filepath):
@@ -191,3 +112,18 @@ def parse_grade_choice(choice):
     elif "профиль" in choice.lower():
         level = "prof"
     return subject, num, level
+
+# --- МОДЕЛИ И ТАРИФЫ (все доступны) ---
+AGENTS = {
+    "⚡ Быстрый (YandexGPT 5 Lite)": "fvtp590q2aec9sirbfd4",
+    "⚖️ Стандарт (YandexGPT 5 Pro)": "fvtan6sh64v0qptovitu",
+    "🧠 Умный (YandexGPT 5.1 Pro)": "fvttfdflmeapltgq6q3c",
+}
+
+def get_available_agents():
+    """Возвращает все модели (без ограничений)."""
+    return list(AGENTS.keys())
+
+def check_generation_limit():
+    """Всегда разрешает генерацию (без лимитов)."""
+    return True
