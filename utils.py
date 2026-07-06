@@ -5,7 +5,6 @@ import sqlite3
 import json
 import re
 import os
-import tempfile
 import logging
 import random
 from io import BytesIO
@@ -25,18 +24,33 @@ YANDEX_CLOUD_API_KEY = os.getenv("YANDEX_CLOUD_API_KEY")
 YANDEX_CLOUD_FOLDER = os.getenv("YANDEX_CLOUD_FOLDER")
 
 def get_openai_client():
-    if not YANDEX_CLOUD_API_KEY or not YANDEX_CLOUD_FOLDER:
-        return None
-    return openai.OpenAI(
-        api_key=YANDEX_CLOUD_API_KEY,
-        base_url="https://ai.api.cloud.yandex.net/v1",
-        project=YANDEX_CLOUD_FOLDER,
-        timeout=60.0,
-    )
+    # Сначала пробуем получить из st.secrets (для Streamlit Cloud)
+    try:
+        import streamlit as st
+        api_key = st.secrets.get("YANDEX_CLOUD_API_KEY")
+        folder = st.secrets.get("YANDEX_CLOUD_FOLDER")
+        if api_key and folder:
+            return openai.OpenAI(
+                api_key=api_key,
+                base_url="https://ai.api.cloud.yandex.net/v1",
+                project=folder,
+                timeout=60.0,
+            )
+    except:
+        pass
+    # Если нет — пробуем из .env (для локальной разработки)
+    if YANDEX_CLOUD_API_KEY and YANDEX_CLOUD_FOLDER:
+        return openai.OpenAI(
+            api_key=YANDEX_CLOUD_API_KEY,
+            base_url="https://ai.api.cloud.yandex.net/v1",
+            project=YANDEX_CLOUD_FOLDER,
+            timeout=60.0,
+        )
+    return None
 
 client = get_openai_client()
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (из main.py) ---
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 def _strip_cite_marks(obj):
     if isinstance(obj, str):
         return re.sub(r'\s*\[cite[^\]]*\]', '', obj)
@@ -82,7 +96,6 @@ def ask_json(agent_id, instruction, expected_keys):
 # --- ГЕНЕРАЦИЯ КОНСПЕКТА (пока заглушка) ---
 def generate_lesson(theme, lesson_type, agent_id, grade, textbook_text=""):
     """Генерирует технологическую карту урока (возвращает текст)."""
-    # Заглушка — замени позже на реальный код
     return f"""Технологическая карта урока.
 
 Класс: {grade}
