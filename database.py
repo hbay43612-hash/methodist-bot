@@ -4,9 +4,11 @@ import secrets
 import datetime
 
 def init_db():
-    """Создаёт таблицы, если их нет."""
+    """Создаёт таблицы, если их нет, и добавляет администратора."""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
+    
+    # Таблица пользователей (confirmed по умолчанию 1)
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -17,28 +19,35 @@ def init_db():
             tariff TEXT DEFAULT 'free',
             daily_generations INTEGER DEFAULT 0,
             last_gen_date TEXT,
-            confirmed BOOLEAN DEFAULT 0,
+            confirmed BOOLEAN DEFAULT 1,
             confirm_token TEXT
         )
     ''')
+    
     c.execute('''
         CREATE TABLE IF NOT EXISTS admins (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE
         )
     ''')
+    
+    # Добавляем администратора (если ещё не добавлен)
+    admin_email = "dr.drozdov2016@yandex.ru"
+    c.execute("INSERT OR IGNORE INTO admins (email) VALUES (?)", (admin_email,))
+    
     conn.commit()
     conn.close()
 
 def add_user(email, password, full_name):
-    """Добавляет нового пользователя (пароль хэшируется)."""
+    """Добавляет нового пользователя (пароль хэшируется, сразу подтверждён)."""
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
     confirm_token = secrets.token_urlsafe(32)
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     try:
+        # confirmed = 1 (сразу подтверждён)
         c.execute(
-            "INSERT INTO users (email, password, full_name, confirm_token) VALUES (?, ?, ?, ?)",
+            "INSERT INTO users (email, password, full_name, confirm_token, confirmed) VALUES (?, ?, ?, ?, 1)",
             (email, hashed, full_name, confirm_token)
         )
         conn.commit()
@@ -58,7 +67,7 @@ def get_user(email):
     return row
 
 def confirm_user(token):
-    """Подтверждает пользователя по токену."""
+    """Подтверждает пользователя по токену (но обычно не нужно)."""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute("UPDATE users SET confirmed = 1 WHERE confirm_token = ?", (token,))
@@ -77,7 +86,7 @@ def is_admin(email):
     return row is not None
 
 def add_admin(email):
-    """Добавляет админа (только для первого запуска)."""
+    """Добавляет админа (можно использовать вручную)."""
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute("INSERT OR IGNORE INTO admins (email) VALUES (?)", (email,))
