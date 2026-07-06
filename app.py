@@ -7,8 +7,6 @@ from utils import (
     get_lesson_themes,
     get_lesson_types,
     get_textbook_content,
-    get_paragraphs_from_docx,
-    get_textbook_paragraph_content,
     AGENTS
 )
 
@@ -39,44 +37,27 @@ def main_app():
 
     themes = get_lesson_themes(grade)
     if not themes:
-        st.warning("⚠️ Нет тем для выбранного класса. Проверьте файлы lessons_*.json.")
+        st.warning("⚠️ Нет тем для выбранного класса. Проверьте файлы lessons_*.json в корне репозитория.")
         themes = ["Нет тем"]
-
     theme = st.selectbox("Тема урока", themes, key="theme_selector")
 
     lesson_types = get_lesson_types()
     if not lesson_types:
         st.warning("⚠️ Файл types.json не найден.")
         lesson_types = ["Нет типов"]
-
     lesson_type = st.selectbox("Тип урока", lesson_types, key="lesson_type_selector")
 
-    # --- УЧЕБНИК И ПАРАГРАФЫ ---
+    # Учебник
     textbook_files = []
     if os.path.exists("textbooks"):
         textbook_files = [f for f in os.listdir("textbooks") if f.endswith(".docx")]
-
     if textbook_files:
         textbook_choice = st.selectbox("Учебник", textbook_files, key="textbook_selector")
-
-        # Парсим параграфы из выбранного учебника
-        textbook_path = os.path.join("textbooks", textbook_choice)
-        paragraphs = get_paragraphs_from_docx(textbook_path)
-
-        if paragraphs:
-            selected_paragraph = st.selectbox("Параграф (раздел)", paragraphs, key="paragraph_selector")
-            # Получаем текст выбранного параграфа
-            textbook_text = get_textbook_paragraph_content(textbook_path, selected_paragraph)
-        else:
-            st.warning("⚠️ В учебнике не найдены разделы. Будет использован весь текст.")
-            selected_paragraph = None
-            textbook_text = get_textbook_content(textbook_path)
+        st.caption(f"📖 Выбран: {textbook_choice}")
     else:
         st.warning("📁 Нет загруженных учебников. Положите файлы .docx в папку textbooks.")
         textbook_choice = None
-        textbook_text = ""
 
-    # --- МОДЕЛИ ---
     agents = get_available_agents()
     if agents:
         agent = st.selectbox("Модель ИИ", agents, key="agent_selector")
@@ -86,15 +67,18 @@ def main_app():
 
     if st.button("🚀 Сгенерировать конспект", type="primary"):
         if not client:
-            st.error("❌ Yandex GPT не настроен.")
+            st.error("❌ Yandex GPT не настроен. Проверьте ключи в секретах.")
         elif not theme or theme == "Нет тем":
             st.warning("⚠️ Выберите тему")
         elif not agent:
-            st.warning("⚠️ Выберите модель")
+            st.warning("⚠️ Выберите модель ИИ")
         elif not textbook_choice:
             st.warning("⚠️ Выберите учебник")
         else:
-            with st.spinner("⏳ Генерация..."):
+            with st.spinner("⏳ Генерация конспекта..."):
+                textbook_path = os.path.join("textbooks", textbook_choice)
+                textbook_text = get_textbook_content(textbook_path)
+
                 try:
                     result = generate_lesson(
                         theme=theme,
