@@ -12,11 +12,11 @@ def login_page():
     if st.button("Войти", type="primary", key="login_submit_btn"):
         user = get_user(email)
         if user:
-            # ВХОД БЕЗ ПОДТВЕРЖДЕНИЯ (отключаем проверку confirmed)
-            # if user[6] == 0:
-            #     st.error("❌ Почта не подтверждена. Проверьте письмо.")
-            #     return
-            if bcrypt.checkpw(password.encode('utf-8'), user[1]):
+            # Приводим пароль из БД к байтам (на случай, если он строка)
+            password_hash = user[1]
+            if isinstance(password_hash, str):
+                password_hash = password_hash.encode('utf-8')
+            if bcrypt.checkpw(password.encode('utf-8'), password_hash):
                 st.session_state['authenticated'] = True
                 st.session_state['user'] = email
                 st.session_state['role'] = 'admin' if is_admin(email) else 'user'
@@ -48,7 +48,7 @@ def register_page():
         if token is None:
             st.error("❌ Пользователь с таким email уже существует")
         else:
-            # Отключаем отправку письма (пока)
+            # Пока отключаем письмо (потом включим)
             # if send_confirmation_email(email, token):
             #     st.success("✅ Регистрация завершена! Проверьте почту для подтверждения.")
             # else:
