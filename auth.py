@@ -1,5 +1,3 @@
-# auth.py
-
 import streamlit as st
 import bcrypt
 from database import get_user, add_user, confirm_user, is_admin
@@ -12,18 +10,14 @@ def login_page():
     if st.button("Войти", type="primary", key="login_submit_btn"):
         user = get_user(email)
         if user:
-            # Приводим хэш к байтам (любой ценой)
             password_hash = user[1]
+            # Если вдруг это строка, преобразуем в байты
             if isinstance(password_hash, str):
                 password_hash = password_hash.encode('utf-8')
-            elif isinstance(password_hash, memoryview):
-                password_hash = bytes(password_hash)
-            elif not isinstance(password_hash, bytes):
-                try:
-                    password_hash = bytes(password_hash)
-                except:
-                    password_hash = str(password_hash).encode('utf-8')
-            # Проверяем пароль
+            # Проверка, что это валидный bcrypt-хеш (начинается с $2)
+            if not password_hash.startswith(b'$2'):
+                st.error("❌ Ошибка: некорректный хеш пароля. Обратитесь к администратору.")
+                return
             if bcrypt.checkpw(password.encode('utf-8'), password_hash):
                 st.session_state['authenticated'] = True
                 st.session_state['user'] = email
