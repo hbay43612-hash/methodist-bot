@@ -1,6 +1,5 @@
 import streamlit as st
 from database import get_user, add_user, confirm_user, is_admin
-from send_email import send_confirmation_email
 
 def login_page():
     st.title("🔐 Вход в систему")
@@ -9,6 +8,7 @@ def login_page():
     if st.button("Войти", type="primary", key="login_submit_btn"):
         user = get_user(email)
         if user:
+            # Прямое сравнение паролей (без bcrypt)
             if password == user[1]:
                 st.session_state['authenticated'] = True
                 st.session_state['user'] = email
