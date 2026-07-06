@@ -45,6 +45,7 @@ def main_app():
 
     lesson_types = get_lesson_types()
     if not lesson_types:
+        st.warning("⚠️ Файл types.json не найден")
         lesson_types = ["Нет типов"]
     lesson_type = st.selectbox("Тип урока", lesson_types, key="lesson_type_selector")
 
@@ -54,6 +55,7 @@ def main_app():
 
     if textbook_files:
         textbook_choice = st.selectbox("Учебник", textbook_files, key="textbook_selector")
+        st.caption(f"📖 Выбран: {textbook_choice}")
     else:
         st.warning("📁 Нет учебников. Положите .docx в папку textbooks.")
         textbook_choice = None
