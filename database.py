@@ -1,6 +1,11 @@
 import sqlite3
+import hashlib
 import secrets
+import datetime
 import os
+
+def hash_password(password):
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
 def init_db():
     if os.path.exists('users.db'):
@@ -14,7 +19,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE,
-            password TEXT,  -- Храним пароль в открытом виде
+            password TEXT,
             full_name TEXT,
             role TEXT DEFAULT 'user',
             tariff TEXT DEFAULT 'free',
@@ -37,19 +42,20 @@ def init_db():
     ]
     
     for email, password, full_name in admins:
+        hashed = hash_password(password)
         c.execute("SELECT id FROM users WHERE email = ?", (email,))
         if c.fetchone():
-            c.execute("UPDATE users SET password = ?, confirmed = 1, tariff = 'pro' WHERE email = ?", (password, email))
+            c.execute("UPDATE users SET password = ?, confirmed = 1, tariff = 'pro' WHERE email = ?", (hashed, email))
         else:
             c.execute(
                 "INSERT INTO users (email, password, full_name, confirmed, tariff) VALUES (?, ?, ?, 1, 'pro')",
-                (email, password, full_name)
+                (email, hashed, full_name)
             )
         c.execute("INSERT OR IGNORE INTO admins (email) VALUES (?)", (email,))
     
     conn.commit()
     conn.close()
-    print("База данных инициализирована, админы созданы (пароли в открытом виде).")
+    print("База данных инициализирована, админы созданы.")
 
 def get_user(email):
     conn = sqlite3.connect('users.db')
@@ -60,13 +66,14 @@ def get_user(email):
     return row
 
 def add_user(email, password, full_name):
+    hashed = hash_password(password)
     confirm_token = secrets.token_urlsafe(32)
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     try:
         c.execute(
             "INSERT INTO users (email, password, full_name, confirm_token, confirmed) VALUES (?, ?, ?, ?, 1)",
-            (email, password, full_name, confirm_token)
+            (email, hashed, full_name, confirm_token)
         )
         conn.commit()
         return confirm_token
