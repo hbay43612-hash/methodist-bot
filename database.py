@@ -6,17 +6,20 @@ import os
 
 def init_db():
     """Создаёт таблицы и гарантирует наличие пользователя-админа."""
-    # Удаляем старую БД, чтобы пересоздать с правильными данными (только для отладки!)
-    # Раскомментируй следующую строку, если нужно сбросить БД:
-    # if os.path.exists('users.db'): os.remove('users.db')
+    # Удаляем старую БД, если она есть (чтобы создать с правильным типом BLOB)
+    if os.path.exists('users.db'):
+        os.remove('users.db')
+        print("Старая БД удалена, создаётся новая.")
     
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
+    
+    # Создаём таблицу users с BLOB для пароля
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE,
-            password TEXT,
+            password BLOB,          -- <--- меняем на BLOB
             full_name TEXT,
             role TEXT DEFAULT 'user',
             tariff TEXT DEFAULT 'free',
@@ -36,6 +39,7 @@ def init_db():
     # --- ГАРАНТИРУЕМ НАЛИЧИЕ АДМИНА С ПРАВИЛЬНЫМ ПАРОЛЕМ ---
     admin_email = "dr.drozdov2016@yandex.ru"
     admin_password = "Qq12131415"
+    # Хэшируем пароль (получаем байты)
     hashed = bcrypt.hashpw(admin_password.encode('utf-8'), bcrypt.gensalt())
     
     # Проверяем, есть ли пользователь
@@ -55,6 +59,7 @@ def init_db():
     
     conn.commit()
     conn.close()
+    print("База данных инициализирована, админ создан.")
 
 def add_user(email, password, full_name):
     """Добавляет нового пользователя (сразу подтверждён)."""
