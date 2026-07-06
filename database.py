@@ -5,8 +5,7 @@ import datetime
 import os
 
 def init_db():
-    """Создаёт таблицы и гарантирует наличие пользователя-админа."""
-    # Удаляем старую БД, если она есть (чтобы создать с правильным типом BLOB)
+    """Создаёт таблицы и гарантирует наличие пользователей-админов."""
     if os.path.exists('users.db'):
         os.remove('users.db')
         print("Старая БД удалена, создаётся новая.")
@@ -14,12 +13,11 @@ def init_db():
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     
-    # Создаём таблицу users с BLOB для пароля
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE,
-            password BLOB,          -- <--- меняем на BLOB
+            password BLOB,
             full_name TEXT,
             role TEXT DEFAULT 'user',
             tariff TEXT DEFAULT 'free',
@@ -36,33 +34,29 @@ def init_db():
         )
     ''')
     
-    # --- ГАРАНТИРУЕМ НАЛИЧИЕ АДМИНА С ПРАВИЛЬНЫМ ПАРОЛЕМ ---
-    admin_email = "dr.drozdov2016@yandex.ru"
-    admin_password = "Qq12131415"
-    # Хэшируем пароль (получаем байты)
-    hashed = bcrypt.hashpw(admin_password.encode('utf-8'), bcrypt.gensalt())
+    # Список админов и их паролей
+    admins = [
+        ("dr.drozdov2016@yandex.ru", "Qq12131415", "Дроздов Денис Олегович"),
+        ("test@test.ru", "Qq12131415", "Тест Тестович")
+    ]
     
-    # Проверяем, есть ли пользователь
-    c.execute("SELECT id FROM users WHERE email = ?", (admin_email,))
-    if c.fetchone():
-        # Обновляем пароль и подтверждение
-        c.execute("UPDATE users SET password = ?, confirmed = 1, tariff = 'pro' WHERE email = ?", (hashed, admin_email))
-    else:
-        # Создаём нового пользователя-админа
-        c.execute(
-            "INSERT INTO users (email, password, full_name, confirmed, tariff) VALUES (?, ?, ?, 1, 'pro')",
-            (admin_email, hashed, "Дроздов Денис Олегович")
-        )
-    
-    # Добавляем в админы
-    c.execute("INSERT OR IGNORE INTO admins (email) VALUES (?)", (admin_email,))
+    for email, password, full_name in admins:
+        hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        c.execute("SELECT id FROM users WHERE email = ?", (email,))
+        if c.fetchone():
+            c.execute("UPDATE users SET password = ?, confirmed = 1, tariff = 'pro' WHERE email = ?", (hashed, email))
+        else:
+            c.execute(
+                "INSERT INTO users (email, password, full_name, confirmed, tariff) VALUES (?, ?, ?, 1, 'pro')",
+                (email, hashed, full_name)
+            )
+        c.execute("INSERT OR IGNORE INTO admins (email) VALUES (?)", (email,))
     
     conn.commit()
     conn.close()
-    print("База данных инициализирована, админ создан.")
+    print("База данных инициализирована, админы созданы.")
 
 def add_user(email, password, full_name):
-    """Добавляет нового пользователя (сразу подтверждён)."""
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
     confirm_token = secrets.token_urlsafe(32)
     conn = sqlite3.connect('users.db')
@@ -111,5 +105,4 @@ def add_admin(email):
     conn.commit()
     conn.close()
 
-# Инициализируем БД при первом импорте
 init_db()
