@@ -1,8 +1,5 @@
-# app.py
-
 import streamlit as st
 import os
-import docx
 from utils import (
     get_available_agents,
     generate_lesson,
@@ -10,8 +7,9 @@ from utils import (
     get_lesson_themes,
     get_lesson_types,
     get_textbook_content,
-    AGENTS,
-    parse_grade_choice
+    get_paragraphs_from_docx,
+    get_textbook_paragraph_content,
+    AGENTS
 )
 
 st.set_page_config(
@@ -24,32 +22,8 @@ client = get_openai_client()
 if not client:
     st.sidebar.warning("⚠️ Yandex GPT не настроен. Проверьте ключи в секретах.")
 
-def find_paragraph_in_textbook(theme, textbook_path):
-    """Ищет в docx-файле параграф с заголовком, совпадающим с темой."""
-    try:
-        doc = docx.Document(textbook_path)
-        current_heading = None
-        paragraphs = []
-        for p in doc.paragraphs:
-            text = p.text.strip()
-            if text and (p.style.name.lower().startswith('heading') or p.style.name.lower().startswith('заголовок')):
-                if current_heading and current_heading.lower() == theme.lower():
-                    return '\n'.join(paragraphs)
-                current_heading = text
-                paragraphs = []
-            elif current_heading:
-                paragraphs.append(text)
-        # Если не нашли точное совпадение, ищем по вхождению
-        for p in doc.paragraphs:
-            if theme.lower() in p.text.lower():
-                return p.text
-        return ""
-    except:
-        return ""
-
 def main_app():
     st.title("📚 Робот-методист")
-
     st.header("📝 Генерация конспекта урока")
 
     grade = st.selectbox(
@@ -65,28 +39,44 @@ def main_app():
 
     themes = get_lesson_themes(grade)
     if not themes:
-        st.warning("⚠️ Нет тем для выбранного класса. Проверьте файлы lessons_*.json в корневой папке.")
-    theme = st.selectbox("Тема урока", themes if themes else ["Нет тем"], key="theme_selector")
+        st.warning("⚠️ Нет тем для выбранного класса. Проверьте файлы lessons_*.json.")
+        themes = ["Нет тем"]
 
-    lesson_type = st.selectbox("Тип урока", get_lesson_types() or ["Нет типов"], key="lesson_type_selector")
+    theme = st.selectbox("Тема урока", themes, key="theme_selector")
 
-    # Автоматический выбор учебника по классу
-    subject, num, level = parse_grade_choice(grade)
-    key = num if subject == "hist" else f"soc_{num}"
-    if level:
-        key = f"{key}_{level}"
-    textbook_path = os.path.join("textbooks", f"textbook_{key}.docx")
-    if not os.path.exists(textbook_path):
-        # пробуем без уровня (общий)
-        textbook_path = os.path.join("textbooks", f"textbook_{num}.docx")
+    lesson_types = get_lesson_types()
+    if not lesson_types:
+        st.warning("⚠️ Файл types.json не найден.")
+        lesson_types = ["Нет типов"]
 
-    # Проверка на наличие учебника
-    if os.path.exists(textbook_path):
-        st.info(f"📖 Учебник: {os.path.basename(textbook_path)}")
+    lesson_type = st.selectbox("Тип урока", lesson_types, key="lesson_type_selector")
+
+    # --- УЧЕБНИК И ПАРАГРАФЫ ---
+    textbook_files = []
+    if os.path.exists("textbooks"):
+        textbook_files = [f for f in os.listdir("textbooks") if f.endswith(".docx")]
+
+    if textbook_files:
+        textbook_choice = st.selectbox("Учебник", textbook_files, key="textbook_selector")
+
+        # Парсим параграфы из выбранного учебника
+        textbook_path = os.path.join("textbooks", textbook_choice)
+        paragraphs = get_paragraphs_from_docx(textbook_path)
+
+        if paragraphs:
+            selected_paragraph = st.selectbox("Параграф (раздел)", paragraphs, key="paragraph_selector")
+            # Получаем текст выбранного параграфа
+            textbook_text = get_textbook_paragraph_content(textbook_path, selected_paragraph)
+        else:
+            st.warning("⚠️ В учебнике не найдены разделы. Будет использован весь текст.")
+            selected_paragraph = None
+            textbook_text = get_textbook_content(textbook_path)
     else:
-        st.warning(f"⚠️ Учебник для {grade} не найден. Добавьте файл textbook_{key}.docx в папку textbooks.")
+        st.warning("📁 Нет загруженных учебников. Положите файлы .docx в папку textbooks.")
+        textbook_choice = None
+        textbook_text = ""
 
-    # Модели ИИ (все доступны)
+    # --- МОДЕЛИ ---
     agents = get_available_agents()
     if agents:
         agent = st.selectbox("Модель ИИ", agents, key="agent_selector")
@@ -96,41 +86,35 @@ def main_app():
 
     if st.button("🚀 Сгенерировать конспект", type="primary"):
         if not client:
-            st.error("❌ Yandex GPT не настроен. Проверьте ключи в секретах.")
+            st.error("❌ Yandex GPT не настроен.")
         elif not theme or theme == "Нет тем":
             st.warning("⚠️ Выберите тему")
         elif not agent:
-            st.warning("⚠️ Выберите модель ИИ")
-        elif not os.path.exists(textbook_path):
-            st.warning("⚠️ Учебник не найден. Загрузите файл в папку textbooks.")
+            st.warning("⚠️ Выберите модель")
+        elif not textbook_choice:
+            st.warning("⚠️ Выберите учебник")
         else:
-            # Ищем параграф в учебнике по теме
-            textbook_text = find_paragraph_in_textbook(theme, textbook_path)
-            if not textbook_text:
-                st.warning(f"Параграф '{theme}' не найден в учебнике. Будет использован весь текст.")
-                textbook_text = get_textbook_content(textbook_path)
-
-            with st.spinner("⏳ Генерация конспекта..."):
+            with st.spinner("⏳ Генерация..."):
                 try:
                     result = generate_lesson(
                         theme=theme,
                         lesson_type=lesson_type,
                         agent_id=AGENTS.get(agent),
                         grade=grade,
-                        textbook_text=textbook_text[:3000]  # ограничим для экономии токенов
+                        textbook_text=textbook_text
                     )
                     st.success("✅ Конспект готов!")
                     st.markdown("### 📄 Результат:")
-                    st.text_area("Конспект", result, height=400, key="result_area")
+                    st.text_area("Конспект", result, height=500, key="result_area")
                     st.download_button(
                         label="📥 Скачать конспект (DOCX)",
                         data=result,
-                        file_name=f"Техкарта_{theme}.docx",
+                        file_name=f"Техкарта_{theme[:30]}.docx",
                         mime="text/plain",
                         key="download_btn"
                     )
                 except Exception as e:
-                    st.error(f"❌ Ошибка генерации: {str(e)}")
+                    st.error(f"❌ Ошибка генерации: {e}")
 
 def main():
     main_app()
