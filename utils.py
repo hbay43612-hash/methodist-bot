@@ -4,6 +4,7 @@ import re
 import random
 import logging
 from io import BytesIO
+import datetime
 
 import openai
 import docx
@@ -14,52 +15,24 @@ import streamlit as st
 
 load_dotenv()
 
-# --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ЗАГРУЗКИ JSON ---
+# ============================================================
+# 1. ЗАГРУЗКА JSON (как в main.py)
+# ============================================================
+def resource_path(filename):
+    return filename
+
 def load_json(filename):
-    """Загружает JSON из файла в корневой папке."""
     if os.path.exists(filename):
         with open(filename, "r", encoding="utf-8") as f:
             try:
                 return json.load(f)
-            except Exception as e:
-                logging.error(f"Ошибка загрузки {filename}: {e}")
+            except:
                 return {}
     return {}
 
-# --- ЗАГРУЗКА ДАННЫХ ---
-TYPES_DATA = load_json("types.json")
-PROMPTS_DATA = load_json("prompts.json")
-SOCIAL_PROMPTS_DATA = load_json("prompts_social.json")
-
-# --- ПАРСИНГ КЛАССА ---
-def parse_grade_choice(choice):
-    subject = "soc" if "обществозн" in choice.lower() else "hist"
-    m = re.search(r'(\d+)', choice)
-    num = m.group(1) if m else ""
-    level = ""
-    if "база" in choice.lower():
-        level = "base"
-    elif "профиль" in choice.lower():
-        level = "prof"
-    return subject, num, level
-
-# --- ПОЛУЧЕНИЕ ТЕМ ---
-def get_lesson_themes(grade):
-    """Возвращает список тем для выбранного класса."""
-    subject, num, level = parse_grade_choice(grade)
-    key = num if subject == "hist" else f"soc_{num}"
-    if level:
-        key = f"{key}_{level}"
-    filename = f"lessons_{key}.json"
-    data = load_json(filename)
-    if data:
-        return list(data.keys())
-    return []
-
-def get_lesson_types():
-    return list(TYPES_DATA.keys()) if TYPES_DATA else []
-
-# --- КОНФИГУРАЦИЯ YANDEX GPT ---
+# ============================================================
+# 2. КОНФИГУРАЦИЯ YANDEX GPT (как в main.py)
+# ============================================================
 def get_openai_client():
     try:
         api_key = st.secrets.get("YANDEX_CLOUD_API_KEY")
@@ -86,7 +59,9 @@ def get_openai_client():
 
 client = get_openai_client()
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (из main.py) ---
+# ============================================================
+# 3. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ИЗ main.py
+# ============================================================
 def _strip_cite_marks(obj):
     if isinstance(obj, str):
         return re.sub(r'\s*\[cite[^\]]*\]', '', obj)
@@ -124,11 +99,45 @@ def ask_json(agent_id, instruction, expected_keys):
     raw = client.responses.create(prompt={"id": agent_id}, input=full_prompt).output_text
     data = _extract_json(raw)
     if data is None:
-        logging.warning("Модель вернула не-JSON, использую сырой текст. Ответ: %s", raw[:500])
+        logging.warning("Модель вернула не-JSON, использую сырой текст.")
         data = {expected_keys[0]: raw.strip()}
     return {k: str(data.get(k, "") or "").strip() for k in expected_keys}
 
-# --- ВАРИАТИВНОСТЬ ПРИЁМОВ ---
+# ============================================================
+# 4. ПАРСИНГ КЛАССА (из main.py)
+# ============================================================
+def parse_grade_choice(choice):
+    subject = "soc" if "обществозн" in choice.lower() else "hist"
+    m = re.search(r'(\d+)', choice)
+    num = m.group(1) if m else ""
+    level = ""
+    if "база" in choice.lower():
+        level = "base"
+    elif "профиль" in choice.lower():
+        level = "prof"
+    return subject, num, level
+
+def grade_file_key(choice):
+    subject, num, level = parse_grade_choice(choice)
+    key = num if subject == "hist" else f"soc_{num}"
+    if level:
+        key = f"{key}_{level}"
+    return key
+
+def textbook_keys(choice):
+    subject, num, level = parse_grade_choice(choice)
+    base = num if subject == "hist" else f"soc_{num}"
+    if level:
+        return [f"{base}_{level}", base]
+    return [base]
+
+# ============================================================
+# 5. ВАРИАТИВНОСТЬ ПРИЁМОВ (из main.py)
+# ============================================================
+TYPES_DATA = load_json("types.json")
+PROMPTS_DATA = load_json("prompts.json")
+SOCIAL_PROMPTS_DATA = load_json("prompts_social.json")
+
 _SERVICE_PROMPTS = {"Функциональная грамотность (PISA)", "Формирующее оценивание (Промпт №2)"}
 
 def _technique_short(value):
@@ -167,7 +176,9 @@ def is_variative_stage(stage_name):
     low = stage_name.lower()
     return any(kw in low for kw in _VARIATIVE_KEYWORDS)
 
-# --- ГЕНЕРАЦИЯ КОНСПЕКТА (полная логика из main.py) ---
+# ============================================================
+# 6. ГЕНЕРАЦИЯ КОНСПЕКТА (ПОЛНОСТЬЮ ИЗ main.py)
+# ============================================================
 def generate_lesson(theme, lesson_type, agent_id, grade, textbook_text=""):
     if not client:
         raise Exception("Yandex GPT не настроен")
@@ -186,10 +197,9 @@ def generate_lesson(theme, lesson_type, agent_id, grade, textbook_text=""):
 
     table_data = []
     lesson_meta = {}
+    ctx = f"Учебник: {textbook_text[:3000]}"
 
-    ctx = f"Учебник: {textbook_text[:2000]}"  # ограничим для краткости
-
-    # --- Шапка ---
+    # --- ШАПКА ---
     try:
         m_instruction = (
             f"Ты опытный учитель {teacher_label}. Класс: {grade}. "
@@ -209,7 +219,7 @@ def generate_lesson(theme, lesson_type, agent_id, grade, textbook_text=""):
         lesson_meta = {}
         logging.exception("Ошибка генерации шапки")
 
-    # --- Этапы ---
+    # --- ЭТАПЫ ---
     stage_keys = ['task', 'forms', 'teacher', 'student', 'result', 'diagnostics']
     extra_note_soc = ""
     if subject == "soc":
@@ -226,24 +236,19 @@ def generate_lesson(theme, lesson_type, agent_id, grade, textbook_text=""):
                 listed = "\n".join(f"  • {name}: {desc.split(chr(10))[0]}" for name, desc in techs)
                 technique_block = (
                     f"\n\n⚠ ВАРИАТИВНОСТЬ ПРИЁМА (важно для этого этапа):\n"
-                    f"Методический сценарий выше может называть конкретный приём "
-                    f"(например «Багаж», «лист самоанализа», «таблица»). НЕ "
-                    f"используй его автоматически — вместо него ВЫБЕРИ один "
-                    f"подходящий приём из списка ниже и построй задание на нём, "
-                    f"сохранив общую методическую ЦЕЛЬ этапа:\n{listed}\n"
-                    f"Приём из сценария оставляй только если ни один из "
-                    f"перечисленных реально не подходит по смыслу."
+                    f"Методический сценарий выше может называть конкретный приём. "
+                    f"НЕ используй его автоматически — вместо него ВЫБЕРИ один "
+                    f"подходящий приём из списка ниже:\n{listed}\n"
                 )
 
         if is_variative_stage(s_n):
             scenario_rule = (
                 "МЕТОДИЧЕСКАЯ ЦЕЛЬ И ЛОГИКА ЭТОГО ЭТАПА (сохрани её суть, но "
-                "конкретный приём можешь заменить — см. блок вариативности ниже):"
+                "конкретный приём можешь заменить):"
             )
         else:
             scenario_rule = (
-                "МЕТОДИЧЕСКИЙ СЦЕНАРИЙ ЭТОГО ЭТАПА (его нужно ТОЧНО воплотить, "
-                "а не пересказать общими словами):"
+                "МЕТОДИЧЕСКИЙ СЦЕНАРИЙ ЭТОГО ЭТАПА (его нужно ТОЧНО воплотить):"
             )
 
         u_instruction = (
@@ -253,28 +258,15 @@ def generate_lesson(theme, lesson_type, agent_id, grade, textbook_text=""):
             f"ГЛАВНОЕ — {scenario_rule}\n"
             f"►►► {s_p} ◄◄◄"
             f"{technique_block}\n\n"
-            f"ВОТ МАТЕРИАЛ УРОКА (учебник), фактуру бери "
-            f"ТОЛЬКО отсюда:\n«««\n{ctx}\n»»»\n\n"
-            f"Твоя работа: РЕАЛИЗУЙ методический сценарий выше на материале "
-            f"этой темы и распиши его реализацию по шести полям "
-            f"технологической карты:\n"
-            f'"task" — задача этапа (планируемый результат);\n'
-            f'"forms" — формы организации (фронтальная/групповая/в парах/'
-            f'индивидуальная), уместные именно для этого сценария;\n'
-            f'"teacher" — действия учителя: ЗДЕСЬ полностью разверни сценарий — '
-            f"точные вопросы, текст сторителлинга, список терминов, условие "
-            f"задачи и т.п., именно так, как требует методический сценарий выше, "
-            f"с конкретикой из материала;\n"
-            f'"student" — действия учащихся КОНКРЕТНО: что находят в тексте, '
-            f"какие факты/имена называют, что записывают, какой вывод формулируют "
-            f"(НЕ «слушают», «размышляют», «проявляют интерес»);\n"
-            f'"result" — что именно ученик теперь знает/умеет по содержанию темы;\n'
-            f'"diagnostics" — чем проверяется усвоение: конкретный вопрос/задание '
-            f"с ожидаемым ответом или критерием.\n\n"
-            f"ЗАПРЕЩЕНО: общие фразы, подходящие к любому уроку; пересказ "
-            f"сценария вместо его воплощения; вода без фактуры из материала. "
-            f"Пиши деловым языком технологической карты, по сути, без лишних "
-            f"вводных слов."
+            f"ВОТ МАТЕРИАЛ УРОКА (учебник):\n«««\n{ctx}\n»»»\n\n"
+            f"Распиши реализацию сценария по шести полям технологической карты:\n"
+            f'"task" — задача этапа;\n'
+            f'"forms" — формы организации;\n'
+            f'"teacher" — действия учителя (конкретные вопросы, задания);\n'
+            f'"student" — действия учащихся (конкретные, НЕ «слушают»);\n'
+            f'"result" — что ученик теперь знает/умеет;\n'
+            f'"diagnostics" — конкретный вопрос/задание для проверки.\n\n'
+            f"ЗАПРЕЩЕНО: общие фразы, вода, пересказ сценария."
             + extra_note_soc
         )
 
@@ -290,7 +282,7 @@ def generate_lesson(theme, lesson_type, agent_id, grade, textbook_text=""):
                 row[k] = ""
             table_data.append(row)
 
-    # Формируем результат в виде текста (можно потом преобразовать в DOCX)
+    # Формируем результат
     result = f"""Технологическая карта урока.
 
 Класс: {grade}
@@ -308,23 +300,37 @@ def generate_lesson(theme, lesson_type, agent_id, grade, textbook_text=""):
         result += f"\n{i}. {row.get('stage', '')}\n"
         result += f"   Задача: {row.get('task', '')}\n"
         result += f"   Формы: {row.get('forms', '')}\n"
-        result += f"   Деятельность учителя: {row.get('teacher', '')}\n"
-        result += f"   Деятельность учащихся: {row.get('student', '')}\n"
+        result += f"   Учитель: {row.get('teacher', '')}\n"
+        result += f"   Ученики: {row.get('student', '')}\n"
         result += f"   Результат: {row.get('result', '')}\n"
         result += f"   Диагностика: {row.get('diagnostics', '')}\n"
 
     return result
 
-# --- ДЛЯ РАБОТЫ С УЧЕБНИКАМИ ---
+# ============================================================
+# 7. ФУНКЦИИ ДЛЯ ИНТЕРФЕЙСА (темы, типы уроков, учебники)
+# ============================================================
+def get_lesson_themes(grade):
+    key = grade_file_key(grade)
+    filename = f"lessons_{key}.json"
+    data = load_json(filename)
+    if not data and key == "5":
+        data = load_json("lessons.json")
+    return list(data.keys()) if data else []
+
+def get_lesson_types():
+    return list(TYPES_DATA.keys()) if TYPES_DATA else []
+
 def get_textbook_content(filepath):
     try:
         doc = docx.Document(filepath)
         return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
-    except Exception as e:
-        logging.error(f"Ошибка чтения учебника {filepath}: {e}")
+    except:
         return ""
 
-# --- МОДЕЛИ ---
+# ============================================================
+# 8. МОДЕЛИ И ТАРИФЫ
+# ============================================================
 AGENTS = {
     "⚡ Быстрый (YandexGPT 5 Lite)": "fvtp590q2aec9sirbfd4",
     "⚖️ Стандарт (YandexGPT 5 Pro)": "fvtan6sh64v0qptovitu",
