@@ -1,0 +1,7 @@
+streamlit
+bcrypt
+requests
+python-dotenv
+docx
+openai
+Pillow
