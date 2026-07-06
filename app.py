@@ -1,11 +1,16 @@
-# app.py (обновлённая версия с уникальными ключами)
+# app.py
 
 import streamlit as st
-from auth import login_page, register_page, logout
-from admin import admin_panel
-from utils import check_generation_limit, get_available_agents, generate_lesson, get_openai_client
-from tariffs import TARIFFS, AGENTS
-from database import confirm_user
+import os
+from utils import (
+    get_available_agents,
+    generate_lesson,
+    get_openai_client,
+    get_lesson_themes,
+    get_lesson_types,
+    get_textbook_content,
+    AGENTS
+)
 
 st.set_page_config(
     page_title="Робот-методист",
@@ -15,113 +20,85 @@ st.set_page_config(
 
 client = get_openai_client()
 if not client:
-    st.sidebar.warning("⚠️ Yandex GPT не настроен. Проверьте ключи в .env")
+    st.sidebar.warning("⚠️ Yandex GPT не настроен. Проверьте ключи в секретах.")
 
 def main_app():
     st.title("📚 Робот-методист")
-    st.write(f"👋 Добро пожаловать, **{st.session_state['user']}**!")
-    st.write(f"💰 Тариф: **{st.session_state['tariff']}**")
-
-    if st.sidebar.button("🚪 Выйти"):
-        logout()
-
-    if st.session_state.get('role') == 'admin':
-        admin_panel()
-        st.divider()
 
     st.header("📝 Генерация конспекта урока")
-    with st.form("generation_form_main"):
-        col1, col2 = st.columns(2)
-        with col1:
-            grade = st.selectbox(
-                "Класс",
-                ["История 5", "История 6", "История 7", "История 8", "История 9",
-                 "История 10 (база)", "История 10 (профиль)",
-                 "История 11 (база)", "История 11 (профиль)",
-                 "Обществознание 9",
-                 "Обществознание 10 (база)", "Обществознание 10 (профиль)",
-                 "Обществознание 11 (база)", "Обществознание 11 (профиль)"],
-                key="grade_selector"
-            )
-            theme = st.text_input("Тема урока", placeholder="Например: Урок 5. Европа в IX—XI вв.", key="theme_text_input")
-            lesson_type = st.selectbox(
-                "Тип урока",
-                ["Урок изучения нового материала (ФГОС + ФГ + ФО)",
-                 "Урок изучения нового материала",
-                 "Урок закрепления (первоначальных навыков)",
-                 "Урок повторения (актуализации)",
-                 "Урок обобщения и систематизации",
-                 "Контрольный урок",
-                 "Коррекционный урок",
-                 "Комбинированный урок",
-                 "Урок применения метапредметных знаний",
-                 "Интегрированный урок",
-                 "Нетрадиционные уроки (экскурсия и др.)",
-                 "Урок проектных задач"],
-                key="lesson_type_selector"
-            )
-        with col2:
-            available_agents = get_available_agents(st.session_state['user'])
-            if available_agents:
-                agent = st.selectbox("Модель ИИ", available_agents, key="agent_selector")
-            else:
-                st.error("Нет доступных моделей. Повысьте тариф.")
-                agent = None
-            textbook_file = st.file_uploader("Загрузить учебник (DOCX)", type=['docx'], key="textbook_uploader_main")
 
-        submitted = st.form_submit_button("🚀 Сгенерировать конспект")
+    # Выбор класса
+    grade = st.selectbox(
+        "Класс",
+        ["История 5", "История 6", "История 7", "История 8", "История 9",
+         "История 10 (база)", "История 10 (профиль)",
+         "История 11 (база)", "История 11 (профиль)",
+         "Обществознание 9",
+         "Обществознание 10 (база)", "Обществознание 10 (профиль)",
+         "Обществознание 11 (база)", "Обществознание 11 (профиль)"],
+        key="grade_selector"
+    )
 
-    if submitted:
+    # Получаем темы для выбранного класса
+    themes = get_lesson_themes(grade)
+    if not themes:
+        st.warning("⚠️ Нет тем для выбранного класса. Проверьте файлы lessons_*.json в корневой папке.")
+    theme = st.selectbox("Тема урока", themes if themes else ["Нет тем"], key="theme_selector")
+
+    lesson_type = st.selectbox("Тип урока", get_lesson_types() or ["Нет типов"], key="lesson_type_selector")
+
+    # Выбор учебника (из папки textbooks)
+    textbook_files = []
+    if os.path.exists("textbooks"):
+        textbook_files = [f for f in os.listdir("textbooks") if f.endswith(".docx")]
+    textbook_choice = None
+    if textbook_files:
+        textbook_choice = st.selectbox("Учебник", textbook_files, key="textbook_selector")
+    else:
+        st.warning("📁 Нет загруженных учебников. Положите файлы .docx в папку textbooks.")
+
+    # Модели ИИ (все доступны)
+    agents = get_available_agents()
+    if agents:
+        agent = st.selectbox("Модель ИИ", agents, key="agent_selector")
+    else:
+        st.error("Нет доступных моделей.")
+        agent = None
+
+    if st.button("🚀 Сгенерировать конспект", type="primary"):
         if not client:
-            st.error("❌ Yandex GPT не настроен. Проверьте ключи в .env")
-        elif not theme:
-            st.warning("⚠️ Введите тему урока")
+            st.error("❌ Yandex GPT не настроен. Проверьте ключи в секретах.")
+        elif not theme or theme == "Нет тем":
+            st.warning("⚠️ Выберите тему")
         elif not agent:
             st.warning("⚠️ Выберите модель ИИ")
+        elif not textbook_choice:
+            st.warning("⚠️ Выберите учебник")
         else:
-            if not check_generation_limit(st.session_state['user']):
-                st.error("⛔ Дневной лимит генераций исчерпан. Повысьте тариф.")
-            else:
-                with st.spinner("⏳ Генерация конспекта..."):
-                    result = generate_lesson(
-                        theme=theme,
-                        lesson_type=lesson_type,
-                        agent_id=AGENTS.get(agent),
-                        grade=grade,
-                        textbook_text="Текст учебника (пока заглушка)"
-                    )
-                    st.success("✅ Конспект готов!")
-                    st.markdown("### 📄 Результат:")
-                    st.text_area("Конспект", result, height=400, key="result_text_area")
-                    st.download_button(
-                        label="📥 Скачать конспект (DOCX)",
-                        data="Пока просто текст",
-                        file_name=f"Конспект_{theme}.docx",
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                        key="download_btn_main"
-                    )
+            with st.spinner("⏳ Генерация конспекта..."):
+                textbook_path = os.path.join("textbooks", textbook_choice)
+                textbook_text = get_textbook_content(textbook_path)
+
+                result = generate_lesson(
+                    theme=theme,
+                    lesson_type=lesson_type,
+                    agent_id=AGENTS.get(agent),
+                    grade=grade,
+                    textbook_text=textbook_text
+                )
+                st.success("✅ Конспект готов!")
+                st.markdown("### 📄 Результат:")
+                st.text_area("Конспект", result, height=400, key="result_area")
+                st.download_button(
+                    label="📥 Скачать конспект (DOCX)",
+                    data=result,
+                    file_name=f"Техкарта_{theme}.docx",
+                    mime="text/plain",
+                    key="download_btn"
+                )
 
 def main():
-    if 'authenticated' not in st.session_state:
-        st.session_state['authenticated'] = False
-
-    if "token" in st.query_params:
-        token = st.query_params["token"]
-        if confirm_user(token):
-            st.success("✅ Почта подтверждена! Теперь вы можете войти.")
-            st.query_params.clear()
-        else:
-            st.error("❌ Неверный или истёкший токен.")
-            st.query_params.clear()
-
-    if st.session_state['authenticated']:
-        main_app()
-    else:
-        tab1, tab2 = st.tabs(["🔐 Вход", "📝 Регистрация"])
-        with tab1:
-            login_page()
-        with tab2:
-            register_page()
+    main_app()
 
 if __name__ == "__main__":
     main()
