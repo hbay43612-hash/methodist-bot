@@ -12,10 +12,17 @@ def login_page():
     if st.button("Войти", type="primary", key="login_submit_btn"):
         user = get_user(email)
         if user:
-            # Пароль из БД может быть строкой или байтами — приводим к байтам
+            # Приводим хэш к байтам (любой ценой)
             password_hash = user[1]
             if isinstance(password_hash, str):
                 password_hash = password_hash.encode('utf-8')
+            elif isinstance(password_hash, memoryview):
+                password_hash = bytes(password_hash)
+            elif not isinstance(password_hash, bytes):
+                try:
+                    password_hash = bytes(password_hash)
+                except:
+                    password_hash = str(password_hash).encode('utf-8')
             # Проверяем пароль
             if bcrypt.checkpw(password.encode('utf-8'), password_hash):
                 st.session_state['authenticated'] = True
@@ -49,7 +56,6 @@ def register_page():
         if token is None:
             st.error("❌ Пользователь с таким email уже существует")
         else:
-            # Пока отключаем письмо
             st.success("✅ Регистрация завершена! Теперь вы можете войти.")
 
 def logout():
