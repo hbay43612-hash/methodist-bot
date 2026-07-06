@@ -10,12 +10,12 @@ def send_confirmation_email(to_email, token):
     from_name = st.secrets.get("FROM_NAME", "Робот-методист")
     
     if not api_key or not from_email:
+        print("Ошибка: отсутствуют UNISENDER_API_KEY или FROM_EMAIL")
         return False
     
     # Ссылка для подтверждения
     link = f"https://methodist-bot-hbay43612-hash.streamlit.app/confirm?token={token}"
     
-    # Текст письма
     subject = "Подтверждение регистрации"
     html = f"""
     <html>
@@ -27,7 +27,6 @@ def send_confirmation_email(to_email, token):
     </html>
     """
     
-    # API Unisender (v2)
     url = "https://api.unisender.com/ru/api/sendEmail"
     params = {
         "format": "json",
@@ -37,19 +36,17 @@ def send_confirmation_email(to_email, token):
         "sender_name": from_name,
         "subject": subject,
         "body": html,
-        "list_id": 1  # если у тебя есть список, иначе можно убрать
     }
     
     try:
         response = requests.post(url, data=params, timeout=10)
         result = response.json()
-        # Если статус "success" — письмо отправлено
         if result.get("status") == "success":
+            print(f"Письмо отправлено на {to_email}")
             return True
         else:
-            # Логируем ошибку, но не прерываем регистрацию
-            print(f"Unisender error: {result}")
+            print(f"Unisender ошибка: {result}")
             return False
     except Exception as e:
-        print(f"Unisender exception: {e}")
+        print(f"Исключение при отправке: {e}")
         return False
